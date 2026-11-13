@@ -85,6 +85,36 @@
     return { rows, total: rows.reduce((s, x) => s + x.amount, 0) };
   }
 
+  /**
+   * 연봉 → 월 급여 구성 (기본급 + 고정연장수당 + 식대)
+   *  월급여 M = 기본급 B + 고정연장수당 F + 식대 S
+   *  통상시급 h = (B + [식대 통상임금 포함 시 S]) / 기준시간(209)
+   *  F = h × 연장시간 × 가산율(1.5)
+   */
+  function salaryBreakdown({ annual, otHours = 26, meal = 200000, mealInOrdinary = true, rate = 1.5, baseHours = 209, minHourly = 0 }) {
+    const A = Number(annual) || 0; const H = Math.max(Number(otHours) || 0, 0); const S = Math.max(Number(meal) || 0, 0);
+    const R = Number(rate) || 0; const BH = Number(baseHours) || 209;
+    if (A <= 0) return { error: '연봉을 입력하세요.' };
+    const monthly = Math.floor(A / 12);
+    const m = mealInOrdinary ? S : 0;
+    const k = (H * R) / BH; // 연장수당 = k × (B + m)
+    const rawB = (monthly - S - k * m) / (1 + k);
+    if (rawB <= 0) return { error: '연봉이 식대·연장수당보다 적어 기본급을 계산할 수 없습니다.' };
+    const hourly = (rawB + m) / BH;
+    const ot = Math.floor(hourly * H * R);
+    const base = monthly - S - ot; // 원 단위 차액은 기본급에 반영
+    const ordinaryHourly = (base + m) / BH;
+    const minWageHourly = (base + S) / BH; // 최저임금 산입: 기본급 + 식대(복리후생비 전액 산입), 연장수당 제외
+    return {
+      monthly, base, ot, meal: S, otHours: H, rate: R,
+      ordinaryHourly: Math.round(ordinaryHourly * 100) / 100,
+      minWageHourly: Math.round(minWageHourly * 100) / 100,
+      minWageOk: minHourly ? minWageHourly >= minHourly : null,
+      annualRemainder: A - monthly * 12,
+      taxFreeMeal: Math.min(S, 200000),
+    };
+  }
+
   /** 해고예고수당 (근기법 제26조) */
   function noticePay(hourly, dailyHours) {
     const amount = Math.round((Number(hourly) || 0) * (Number(dailyHours) || 0) * 30);
@@ -102,7 +132,7 @@
     return fmtDate(d);
   }
 
-  const api = { toDate, fmtDate, addDays, addMonths, daysBetween, completedMonths, annualLeave, severance, weeklyHoliday, minWageCheck, overtimePay, noticePay, deadline };
+  const api = { toDate, fmtDate, addDays, addMonths, daysBetween, completedMonths, annualLeave, severance, weeklyHoliday, minWageCheck, overtimePay, noticePay, deadline, salaryBreakdown };
   root.HRCalc = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

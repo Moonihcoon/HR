@@ -382,3 +382,10 @@ h2.section .more { margin-left: auto; font-size: 13px; font-weight: 600; text-de
   .api-pill.compact { padding: 0; width: 28px; height: 28px; justify-content: center; }
   .th-list li { grid-template-columns: 22px 70px 1fr; }
 }
+
+/* ── 연봉 변환 계산기 */
+.calc-wide { grid-column: 1 / -1; }
+.sal-fields { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.calc-wide .result .table { background: #fff; border-radius: 10px; }
+@media (max-width: 860px) { .sal-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .sal-fields { grid-template-columns: 1fr; } .calc-wide .table th:nth-child(4), .calc-wide .table td:nth-child(4) { display: none; } }

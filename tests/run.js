@@ -103,6 +103,21 @@ const t = async (name, fn) => {
     const b = C.overtimePay({ hourly: 10000, ext: 10, night: 2, hol8: 8, holOver: 2, under5: true });
     assert.strictEqual(b.total, 100000 + 0 + 80000 + 20000);
   });
+  await t('연봉 변환: 합계 일치·연장수당 = 통상시급×26×1.5', () => {
+    for (const annual of [28000000, 36000000, 40000000, 55500000, 120000000]) {
+      for (const inc of [true, false]) {
+        const r = C.salaryBreakdown({ annual, otHours: 26, meal: 200000, mealInOrdinary: inc, minHourly: 10320 });
+        assert.strictEqual(r.base + r.ot + r.meal, r.monthly, `합계 ${annual}`);
+        assert.strictEqual(r.monthly, Math.floor(annual / 12));
+        assert(Math.abs(r.ot - (r.base + (inc ? 200000 : 0)) / 209 * 26 * 1.5) < 2, `연장수당 정합 ${annual}`);
+      }
+    }
+    const r = C.salaryBreakdown({ annual: 40000000, minHourly: 10320 });
+    assert.strictEqual(r.base, 2609140); assert.strictEqual(r.ot, 524193); assert.strictEqual(r.minWageOk, true);
+    assert.strictEqual(C.salaryBreakdown({ annual: 28000000, minHourly: 10320 }).minWageOk, false);
+    assert(C.salaryBreakdown({ annual: 0 }).error); assert(C.salaryBreakdown({ annual: 2000000 }).error);
+    assert.strictEqual(C.salaryBreakdown({ annual: 36000000, otHours: 0 }).ot, 0);
+  });
   await t('해고예고수당 / 기한 계산', () => {
     assert.strictEqual(C.noticePay(10700, 8).amount, 2568000);
     assert.strictEqual(C.deadline('2026-11-13', { days: 14 }), '2026-11-27');

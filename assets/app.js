@@ -5,6 +5,7 @@
   const C = window.HRCalc;
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const won2 = (n) => `${(Number(n) || 0).toLocaleString('ko-KR', { maximumFractionDigits: 2 })}원`;
   const won = (n) => `${Math.round(Number(n) || 0).toLocaleString('ko-KR')}원`;
   const ymd = (s) => (s && /^\d{8}$/.test(s) ? `${s.slice(0, 4)}.${s.slice(4, 6)}.${s.slice(6, 8)}` : s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s.replace(/-/g, '.') : s || '-');
   const store = {
@@ -461,6 +462,18 @@
     return `
       <div class="page-head"><div><p class="eyebrow">CALCULATORS</p><h1>실무 계산기</h1><p>입력값을 바꾸면 바로 계산됩니다. 결과는 참고용입니다.</p></div></div>
       <div class="calc-grid">
+        <section class="card calc calc-wide" data-calc="sal"><h3>🧾 연봉 → 월 급여 구성 변환</h3><p class="desc">최종 연봉을 입력하면 월 급여를 <strong>기본급 + 고정 연장근로수당 + 식대</strong>로 자동 분배합니다. (연봉에 퇴직금 미포함 기준)</p>
+          <div class="fields sal-fields">
+            <div class="field"><label for="sal_annual">최종 연봉(원)</label><input id="sal_annual" type="text" inputmode="numeric" value="40,000,000" autocomplete="off" /><span class="small muted" id="sal_annual_hint"></span></div>
+            ${f('sal_ot', '월 고정 연장근로시간', 'number', 26, 'step="0.5"')}
+            ${f('sal_meal', '식대(원/월)', 'number', 200000, 'step="10000"')}
+            <div class="field"><label for="sal_year">최저임금 비교 연도</label><select id="sal_year">${yrs.map((y) => `<option value="${y}" ${y === year ? 'selected' : ''}>${y}년 · ${D.MIN_WAGE[y].toLocaleString()}원</option>`).join('')}</select></div>
+            <div class="field"><label for="sal_meal_inc">식대의 통상임금 포함</label><select id="sal_meal_inc"><option value="1">포함 (정기·일률 지급, 권장)</option><option value="0">제외</option></select></div>
+            <div class="field"><label for="sal_rate">연장근로 가산율</label><select id="sal_rate"><option value="1.5" ${hasSize() && state.size < 5 ? '' : 'selected'}>150% (상시 5인 이상)</option><option value="1" ${hasSize() && state.size < 5 ? 'selected' : ''}>100% (5인 미만)</option></select></div>
+          </div>
+          <div class="result" id="sal_out"></div>
+          <div class="ref-line">근거 ${refChip('근기|56')}${refChip('근기령|6')}${refChip('최임|6')}${refChip('근기|53')} <button type="button" class="btn sm" id="salCopy" style="margin-left:auto">결과 복사</button></div></section>
+
         <section class="card calc" data-calc="leave"><h3>📆 연차유급휴가 일수</h3><p class="desc">출근율 80% 이상 기준 · 5인 이상 사업장</p>
           <div class="fields">${f('lv_hire', '입사일', 'date', `${year - 3}-03-02`)}${f('lv_base', '기준일', 'date', todayStr())}</div>
           <div class="result" id="lv_out"></div><div class="ref-line">근거 ${refChip('근기|60')}${refChip('근기|61')}</div></section>
@@ -493,7 +506,35 @@
   const v = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
   const n = (id) => Number(v(id)) || 0;
   const setOut = (id, html, cls = '') => { const el = document.getElementById(id); if (el) { el.className = `result ${cls}`; el.innerHTML = html; } };
+  let salText = '';
+  function runSalary() {
+    const raw = v('sal_annual').replace(/[^0-9]/g, '');
+    const annual = Number(raw);
+    const hint = document.getElementById('sal_annual_hint');
+    if (hint) hint.textContent = annual ? `${(annual / 10000).toLocaleString('ko-KR', { maximumFractionDigits: 1 })}만원 · 월 ${won(Math.floor(annual / 12))}` : '';
+    const y = Number(v('sal_year'));
+    const r = C.salaryBreakdown({ annual, otHours: n('sal_ot'), meal: n('sal_meal'), mealInOrdinary: v('sal_meal_inc') === '1', rate: Number(v('sal_rate')), minHourly: D.MIN_WAGE[y] });
+    if (r.error) { setOut('sal_out', esc(r.error), 'err'); salText = ''; return; }
+    const rows = [
+      ['기본급', r.base, '209시간분(유급주휴 포함)'],
+      [`고정 연장근로수당 (${r.otHours}시간)`, r.ot, `통상시급 ${won2(r.ordinaryHourly)} × ${r.otHours}h × ${r.rate}`],
+      ['식대', r.meal, r.meal <= 200000 ? '월 20만원까지 비과세' : `비과세 20만원 / 과세 ${won(r.meal - 200000)}`],
+    ];
+    const weekly = r.otHours / 4.345;
+    const warns = [];
+    if (r.minWageOk === false) warns.push(`⚠ 최저임금 미달: 산입 시간급 ${won(r.minWageHourly)} < ${y}년 ${won(D.MIN_WAGE[y])} (기본급+식대 ÷ 209h 기준)`);
+    if (weekly > 12) warns.push(`⚠ 월 ${r.otHours}시간은 주 평균 약 ${weekly.toFixed(1)}시간으로 연장근로 한도(주 12시간)를 넘을 수 있습니다.`);
+    if (r.rate === 1 && !(hasSize() && state.size < 5)) warns.push('ℹ 5인 이상 사업장은 연장근로 가산(50%)이 의무입니다.');
+    setOut('sal_out', `<div class="r-main">월 급여 ${won(r.monthly)}</div>
+      <div class="table-wrap" style="margin-top:8px"><table class="table"><thead><tr><th>항목</th><th class="num">월</th><th class="num">연간</th><th>산정 근거</th></tr></thead><tbody>
+      ${rows.map(([k, val, note]) => `<tr><td><strong>${esc(k)}</strong></td><td class="num">${won(val)}</td><td class="num">${won(val * 12)}</td><td class="small">${esc(note)}</td></tr>`).join('')}
+      <tr><td><strong>합계</strong></td><td class="num"><strong>${won(r.monthly)}</strong></td><td class="num"><strong>${won(r.monthly * 12)}</strong></td><td class="small">${r.annualRemainder ? `연봉 ÷ 12 원 단위 절사(연 ${won(r.annualRemainder)} 차이)` : ''}</td></tr></tbody></table></div>
+      <div class="r-sub">통상시급 ${won2(r.ordinaryHourly)} · 최저임금 산입 시간급 ${won2(r.minWageHourly)} ${r.minWageOk ? `(✅ ${y}년 최저임금 충족)` : ''}</div>
+      ${warns.map((w) => `<div class="r-sub" style="color:var(--red);font-weight:600">${esc(w)}</div>`).join('')}`, r.minWageOk === false ? 'warn' : '');
+    salText = [`연봉 ${won(annual)} → 월 ${won(r.monthly)}`, ...rows.map(([k, val]) => `${k}: ${won(val)}`), `통상시급: ${won2(r.ordinaryHourly)}`].join('\n');
+  }
   function runCalcs() {
+    runSalary();
     const lv = C.annualLeave(v('lv_hire'), v('lv_base'));
     if (lv.error) setOut('lv_out', esc(lv.error), 'err');
     else if (hasSize() && state.size < 5) setOut('lv_out', `<div class="r-main">적용 제외</div><div class="r-sub">상시 ${state.size}명(5인 미만) 사업장은 연차유급휴가 규정이 적용되지 않습니다. (참고: 5인 이상이라면 ${lv.days}일)</div>`, 'warn');
@@ -639,6 +680,7 @@
     const sz = t.closest('[data-size]');
     if (sz) { setSize(Number(sz.getAttribute('data-size'))); return; }
     if (t.closest('#sizeClear') || t.closest('[data-size-clear]')) { setSize(null); return; }
+    if (t.closest('#salCopy')) { if (salText) copyText(salText); return; }
     if (t.closest('#refreshInfo')) { state.info = null; renderLawStatus(); refreshInfo(true); return; }
     if (t.closest('#drfSearch')) { runDrfSearch(state.q, '#drfResult', '2'); return; }
     if (t.closest('#apiTest')) { testApi(); return; }
@@ -678,6 +720,7 @@
   });
   document.addEventListener('change', (e) => {
     const t = e.target;
+    if (t.id === 'sal_annual') { const num = Number(t.value.replace(/[^0-9]/g, '')); t.value = num ? num.toLocaleString('ko-KR') : ''; }
     if (t.closest('[data-calc]')) runCalcs();
     if (t.id === 'dl_sel') runDeadline();
     if (t.id === 'under5') { state.under5 = t.checked; rerenderSearchList(); }
