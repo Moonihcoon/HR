@@ -27,7 +27,7 @@
 
   const state = {
     q: '', cat: 'all', under5: false, sort: 'rel', expandAll: false, expanded: new Set(),
-    changeTag: 'all', law: null, lawFilter: '', apiOk: null, info: store.get('hr.info', null),
+    changeTag: 'all', law: null, lawFilter: '', apiOk: null, info: null,
   };
 
   // ── 조문 참조 파싱
@@ -63,11 +63,16 @@
   }
   const memo = new Map();
   function cachedApi(params, ttlMs = 6 * 3600e3) {
-    const key = 'hr.c.' + JSON.stringify(params);
+    const key = 'hr.c2.' + JSON.stringify(params);
     if (memo.has(key)) return memo.get(key);
     const hit = store.get(key, null);
     if (hit && Date.now() - hit.at < ttlMs) return Promise.resolve(hit.body);
-    const p = api(params).then((body) => { if (JSON.stringify(body).length < 400000) store.set(key, { at: Date.now(), body }); return body; });
+    const p = api(params).then((body) => {
+      const allFailed = Array.isArray(body.laws) && !body.laws.some((l) => l.ok);
+      if (!allFailed && JSON.stringify(body).length < 400000) store.set(key, { at: Date.now(), body });
+      if (allFailed) memo.delete(key);
+      return body;
+    });
     memo.set(key, p);
     p.catch(() => memo.delete(key));
     return p;
@@ -91,7 +96,7 @@
       const okCount = body.laws.filter((l) => l.ok).length;
       state.apiOk = okCount > 0;
       state.info = body;
-      store.set('hr.info', body);
+      
       setApiPill(okCount ? 'ok' : 'err', okCount ? `법제처 API 연동 · ${okCount}개 법령 최신화` : '법제처 API 응답 오류');
     } catch (e) {
       state.apiOk = false;
@@ -633,7 +638,7 @@
   });
   function clearCache() {
     memo.clear();
-    try { Object.keys(localStorage).filter((k) => k.startsWith('hr.c.') || k === 'hr.info').forEach((k) => localStorage.removeItem(k)); } catch (_) { /* noop */ }
+    try { Object.keys(localStorage).filter((k) => k.startsWith('hr.c') || k === 'hr.info').forEach((k) => localStorage.removeItem(k)); } catch (_) { /* noop */ }
   }
   window.addEventListener('hashchange', () => { closeModal(); render(); if (!routeParams().get('item')) window.scrollTo(0, 0); });
 
