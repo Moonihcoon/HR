@@ -46,6 +46,17 @@ const t = async (name, fn) => {
     assert(!allRefs.includes('근기|109') || D.ITEMS.find((i) => i.id === 'bullying').penalty.refs.includes('근기|109'));
   });
 
+  await t('상시근로자 수 적용 기준(minSize) 계산', () => {
+    const g = (id) => D.ITEMS.find((i) => i.id === id).minSize;
+    for (const it of D.ITEMS) assert(Number.isInteger(it.minSize) && it.minSize >= 1 && Array.isArray(it.sizeNotes), it.id);
+    assert.strictEqual(g('annual-leave'), 5); assert.strictEqual(g('min-wage'), 1); assert.strictEqual(g('work-rules'), 10);
+    assert.strictEqual(g('labor-council'), 30); assert.strictEqual(g('bullying'), 5); assert.strictEqual(g('dismissal-notice'), 1);
+    assert.strictEqual(g('severance'), 1); assert.strictEqual(g('serious-accident'), 5);
+    for (const it of D.ITEMS) if (it.under5 === true) assert.strictEqual(it.minSize, 1, `${it.id}: 5인 미만 적용인데 minSize ${it.minSize}`);
+    for (const it of D.ITEMS) for (const n of it.sizeNotes) assert(n.text && (n.min == null || n.max == null || n.min <= n.max), it.id);
+    for (let i = 1; i < D.THRESHOLDS.length; i += 1) assert(D.THRESHOLDS[i - 1].min < D.THRESHOLDS[i].min);
+  });
+
   console.log('\n[2] 계산기');
   await t('연차: 1년 미만 월 1일, 최대 11일', () => {
     assert.strictEqual(C.annualLeave('2026-01-01', '2026-06-15').days, 5);

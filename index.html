@@ -33,6 +33,12 @@
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.5 3a7.5 7.5 0 0 1 5.96 12.06l4.24 4.24-1.4 1.4-4.24-4.24A7.5 7.5 0 1 1 10.5 3Zm0 2a5.5 5.5 0 1 0 0 11 5.5 5.5 0 0 0 0-11Z"/></svg>
           <input id="topSearchInput" type="search" placeholder="조문·주제 검색 (예: 연차, 해고예고, 임금체불)" aria-label="조문·주제 검색" autocomplete="off" />
         </form>
+        <div class="size-box" id="sizeBox" title="상시근로자 수를 입력하면 우리 회사에 적용되는 법 내용만 표시됩니다">
+          <label for="sizeInput"><span class="sz-ico" aria-hidden="true">👥</span><span class="sz-label">상시근로자</span></label>
+          <input id="sizeInput" type="number" min="0" max="999999" step="1" inputmode="numeric" placeholder="인원" aria-label="상시근로자 수(명)" />
+          <span class="sz-unit">명</span>
+          <button type="button" class="sz-clear" id="sizeClear" aria-label="상시근로자 수 지우기" hidden>✕</button>
+        </div>
         <div class="api-pill compact" id="apiPillTop" title="법제처 API 상태"><span class="dot"></span><span class="label">API</span></div>
       </header>
 

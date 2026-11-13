@@ -595,7 +595,41 @@
     { date: '2028-01-01', law: '산안', title: '위험성평가 과태료 50인 미만 적용', detail: '50인 미만·공사금액 50억원 미만 건설공사로 확대.', tag: '산업안전', ref: '산안|36' },
   ];
 
+  // ── 상시근로자 수 기준 적용 범위
+  //  min: 이 인원 이상부터 적용 (미지정 시 under5=false → 5, 그 외 1)
+  //  notes: 해당 인원 구간(min~max)에 표시할 안내
+  const SIZE_RULES = {
+    'work-rules': { min: 10, notes: [{ max: 9, text: '10명 미만은 취업규칙 작성·신고 의무가 없습니다(작성하면 효력은 인정).' }] },
+    'labor-council': { min: 30, notes: [{ max: 29, text: '30명 미만은 노사협의회 설치 의무가 없습니다.' }] },
+    'bullying': { min: 5, notes: [{ min: 10, text: '상시 10명 이상: 취업규칙에 직장 내 괴롭힘 예방·발생 시 조치 사항을 반드시 기재해야 합니다.' }] },
+    'serious-accident': { min: 5, notes: [{ min: 5, max: 49, text: '50인 미만 사업장도 2024. 1. 27.부터 적용 대상입니다.' }] },
+    'risk-assessment': { min: 1, notes: [{ min: 50, text: '50인 이상: 2027. 1. 1.부터 위험성평가 과태료가 적용됩니다.' }, { max: 49, text: '50인 미만: 위험성평가 의무는 있으나 과태료는 2028. 1. 1.부터 적용됩니다.' }] },
+    'sh-education': { min: 1, notes: [{ max: 9, text: '10명 미만 사업장은 교육자료 배포·게시 등으로 예방교육을 갈음할 수 있습니다.' }] },
+    'spouse-leave': { min: 1, notes: [{ max: 29, text: '우선지원대상기업 30인 미만: 배우자 출산휴가 업무분담지원금 월 최대 60만원.' }, { min: 30, text: '우선지원대상기업 30인 이상: 업무분담지원금 월 최대 40만원.' }] },
+    'weekly-holiday': { min: 1, notes: [{ max: 4, text: '5인 미만: 주휴일은 적용되지만 관공서 공휴일 유급휴일은 적용되지 않습니다.' }] },
+    'dismissal-ban': { min: 1, notes: [{ max: 4, text: '5인 미만이라도 해고 금지기간(제23조제2항)과 해고예고(제26조)는 적용됩니다.' }] },
+    'layoff': { min: 5, notes: [{ min: 5, text: '대량 해고 신고: 99명 이하 10명 이상, 100~999명 10% 이상, 1,000명 이상 100명 이상 해고 시 고용노동부 신고(시행령 제10조).' }] },
+    'fixed-term': { min: 5 }, 'nonreg-written': { min: 5 }, 'discrimination': { min: 5 },
+    'retire-age': { min: 1 }, 'union-act': { min: 1 }, 'safety-edu': { min: 1 },
+  };
+  ITEMS.forEach((it) => {
+    const r = SIZE_RULES[it.id] || {};
+    it.minSize = r.min != null ? r.min : (it.under5 === false ? 5 : 1);
+    it.sizeNotes = r.notes || [];
+  });
+
+  // 규모별 주요 의무 (대시보드 체크리스트)
+  const THRESHOLDS = [
+    { min: 1, title: '1인 이상', text: '근로계약서 서면교부, 최저임금, 주휴일, 휴게, 해고예고, 퇴직금(1년 이상), 출산전후휴가·육아휴직, 성희롱 예방교육', ref: '근기령|7' },
+    { min: 5, title: '5인 이상', text: '근로기준법 전면 적용: 가산수당, 연차, 주 52시간, 부당해고 제한·서면통지, 직장 내 괴롭힘, 휴업수당, 기간제법, 중대재해처벌법', ref: '근기|11' },
+    { min: 10, title: '10인 이상', text: '취업규칙 작성·신고, 취업규칙에 괴롭힘 예방·조치 기재', ref: '근기|93' },
+    { min: 30, title: '30인 이상', text: '노사협의회 설치·3개월마다 정기회의, 고충처리위원 선임', ref: '참여|4' },
+    { min: 50, title: '50인 이상', text: '위험성평가 과태료 적용(2027.1.1.~), 장애인 의무고용(의무고용률 이상 고용)', ref: '산안|36' },
+    { min: 100, title: '100인 이상', text: '장애인 의무고용률 미달 시 고용부담금 납부 대상' },
+    { min: 300, title: '300인 이상', text: '고용형태 현황 공시(매년 3월)' },
+  ];
+
   const MIN_WAGE = { 2024: 9860, 2025: 10030, 2026: 10320, 2027: 10700 };
 
-  window.HR_DATA = { LAWS, TRACKED, CATEGORIES, ITEMS, DEADLINES, CHANGES, MIN_WAGE, BASE_DATE: '2026-11-13' };
+  window.HR_DATA = { LAWS, TRACKED, CATEGORIES, ITEMS, DEADLINES, CHANGES, MIN_WAGE, THRESHOLDS, BASE_DATE: '2026-11-13' };
 })();

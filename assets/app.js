@@ -27,7 +27,7 @@
 
   const state = {
     q: '', cat: 'all', under5: false, sort: 'rel', expandAll: false, expanded: new Set(),
-    changeTag: 'all', law: null, lawFilter: '', apiOk: null, info: null,
+    changeTag: 'all', law: null, size: (() => { const v = store.get('hr.size', null); return Number.isInteger(v) && v >= 0 ? v : null; })(), showNA: false, lawFilter: '', apiOk: null, info: null,
   };
 
   // ── 조문 참조 파싱
@@ -170,6 +170,15 @@
   // ── 항목 카드
   const PTYPE = { crime: '형사처벌', fine: '과태료', civil: '민사·효력', none: '직접 벌칙 없음' };
   const catOf = (id) => D.CATEGORIES.find((c) => c.id === id) || { name: id, icon: '•' };
+  const hasSize = () => state.size != null;
+  const applies = (it) => (hasSize() ? state.size >= it.minSize : null);
+  const sizeNotesFor = (it) => (hasSize() ? it.sizeNotes.filter((x) => (x.min == null || state.size >= x.min) && (x.max == null || state.size <= x.max)) : []);
+  function sizeBadge(it) {
+    if (!hasSize()) return under5Badge(it.under5);
+    return applies(it)
+      ? `<span class="badge green" title="상시 ${state.size}명 사업장에 적용">✅ 우리 회사 적용</span>`
+      : `<span class="badge gray" title="상시 ${it.minSize}명 이상부터 적용">⛔ 미적용 (${it.minSize}명 이상)</span>`;
+  }
   function under5Badge(v) {
     if (v === true) return '<span class="badge green" title="상시 5인 미만 사업장에도 적용">5인 미만 적용</span>';
     if (v === false) return '<span class="badge gray" title="상시 5인 미만 사업장 적용 제외">5인 미만 제외</span>';
@@ -181,12 +190,16 @@
     const recent = it.updated && dday(it.updated) > -120;
     const sum = open ? it.summary : it.summary.slice(0, 2);
     const p = it.penalty;
-    return `<article class="card item" id="item-${esc(it.id)}">
+    const ap = applies(it);
+    const notes = sizeNotesFor(it);
+    return `<article class="card item ${ap === false ? 'na' : ''}" id="item-${esc(it.id)}">
       <div class="item-body">
         <div class="item-head"><h3>${esc(it.title)}</h3>${it.hot ? '<span class="badge hot">개정</span>' : ''}</div>
-        <div class="item-meta"><span class="badge blue">${cat.icon} ${esc(cat.name)}</span>${under5Badge(it.under5)}${recent ? `<span class="badge red">${dday(it.updated) > 0 ? '시행 예정' : '최근 개정'} ${esc(ymd(it.updated))}</span>` : ''}</div>
+        <div class="item-meta"><span class="badge blue">${cat.icon} ${esc(cat.name)}</span>${sizeBadge(it)}${recent ? `<span class="badge red">${dday(it.updated) > 0 ? '시행 예정' : '최근 개정'} ${esc(ymd(it.updated))}</span>` : ''}</div>
         <div class="chips">${it.refs.map((r) => refChip(r)).join('')}</div>
         <ul style="margin-top:10px">${sum.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>
+        ${ap === false ? `<div class="size-note na">👥 상시 ${state.size}명 사업장에는 적용되지 않습니다(상시 ${it.minSize}명 이상부터 적용).</div>` : ''}
+        ${notes.map((x) => `<div class="size-note">👥 ${esc(x.text)}</div>`).join('')}
         ${open && it.tip ? `<div class="tip">💡 ${esc(it.tip)}</div>` : ''}
         ${(it.summary.length > 2 || it.tip) && !state.expandAll ? `<button class="more-btn" type="button" data-toggle="${esc(it.id)}">${open ? '접기 ▲' : '자세히 ▼'}</button>` : ''}
       </div>
@@ -219,10 +232,12 @@
     const q = state.q.trim();
     let list = D.ITEMS.map((it) => ({ it, s: scoreItem(it, q) })).filter((x) => x.s > 0);
     if (state.cat !== 'all') list = list.filter((x) => x.it.cat === state.cat);
-    if (state.under5) list = list.filter((x) => x.it.under5 === true);
+    if (hasSize()) { if (!state.showNA) list = list.filter((x) => applies(x.it)); else list.sort((a, b) => Number(applies(b.it)) - Number(applies(a.it))); }
+    else if (state.under5) list = list.filter((x) => x.it.under5 === true);
     if (state.sort === 'rel') list.sort((a, b) => b.s - a.s);
     else if (state.sort === 'law') list.sort((a, b) => { const A = parseRef(a.it.refs[0]); const B = parseRef(b.it.refs[0]); return A.law.localeCompare(B.law, 'ko') || A.no - B.no || A.br - B.br; });
     else if (state.sort === 'recent') list.sort((a, b) => String(b.it.updated).localeCompare(String(a.it.updated)));
+    if (hasSize() && state.showNA) list = list.filter((x) => applies(x.it)).concat(list.filter((x) => !applies(x.it)));
     return list.map((x) => x.it);
   }
 
@@ -248,7 +263,7 @@
     const crimes = D.ITEMS.filter((i) => i.penalty.type === 'crime').length;
     const fines = D.ITEMS.filter((i) => i.penalty.type === 'fine').length;
     const nextC = upcoming[0];
-    const hot = D.ITEMS.filter((i) => i.hot).slice(0, 8);
+    const hot = D.ITEMS.filter((i) => i.hot && applies(i) !== false).slice(0, 8);
     const year = Number(today.slice(0, 4));
     const mw = D.MIN_WAGE[year] || D.MIN_WAGE[2026];
     const mwNext = D.MIN_WAGE[year + 1];
@@ -262,11 +277,13 @@
       </section>
 
       <section class="grid g-4" style="margin-bottom:18px">
-        <div class="card kpi"><span class="k-label">📌 수록 주제</span><span class="k-value">${D.ITEMS.length}<small>개</small></span><span class="k-sub">${D.CATEGORIES.length}개 분야 · ${Object.keys(D.LAWS).length}개 법령</span></div>
+        ${hasSize() ? `<div class="card kpi"><span class="k-label">👥 상시 ${state.size.toLocaleString()}명 적용</span><span class="k-value">${D.ITEMS.filter((i) => applies(i)).length}<small>/ ${D.ITEMS.length}개</small></span><span class="k-sub">미적용 ${D.ITEMS.filter((i) => !applies(i)).length}개 주제</span></div>` : `<div class="card kpi"><span class="k-label">📌 수록 주제</span><span class="k-value">${D.ITEMS.length}<small>개</small></span><span class="k-sub">${D.CATEGORIES.length}개 분야 · ${Object.keys(D.LAWS).length}개 법령</span></div>`}
         <div class="card kpi"><span class="k-label">⚖ 처벌규정</span><span class="k-value">${crimes}<small>형사</small> · ${fines}<small>과태료</small></span><span class="k-sub">모든 항목 하단에 표기</span></div>
         <div class="card kpi"><span class="k-label">💰 ${year}년 최저시급</span><span class="k-value">${mw.toLocaleString()}<small>원</small></span><span class="k-sub">${mwNext ? `${year + 1}년 ${mwNext.toLocaleString()}원 (+${((mwNext / mw - 1) * 100).toFixed(1)}%)` : `월 ${(mw * 209).toLocaleString()}원 (209h)`}</span></div>
         <div class="card kpi"><span class="k-label">📅 다음 시행</span><span class="k-value">${nextC ? `D-${dday(nextC.date)}` : '-'}</span><span class="k-sub">${nextC ? esc(nextC.title) : '예정 일정 없음'}</span></div>
       </section>
+
+      ${sizeSection()}
 
       <section class="grid g-2" style="margin-bottom:18px">
         <div class="card"><h2 class="section">📅 다가오는 개정·시행 <a class="more" href="#changes">전체 보기 →</a></h2>
@@ -285,6 +302,24 @@
       <section><h2 class="section">🔥 최근 개정·주요 항목 <a class="more" href="#search?sort=recent">최근 개정순 →</a></h2>
         <div class="items">${hot.map(itemCard).join('')}</div>
       </section>`;
+  }
+  function sizeSection() {
+    const th = D.THRESHOLDS.map((t) => {
+      const on = hasSize() && state.size >= t.min;
+      return `<li class="${hasSize() ? (on ? 'on' : 'off') : ''}"><span class="th-ico">${hasSize() ? (on ? '✅' : '⬜') : '•'}</span><span class="th-title">${esc(t.title)}</span><span>${esc(t.text)}${t.ref ? ` ${refChip(t.ref)}` : ''}</span></li>`;
+    }).join('');
+    const na = hasSize() ? D.ITEMS.filter((i) => !applies(i)) : [];
+    const notes = hasSize() ? D.ITEMS.filter((i) => applies(i)).flatMap((i) => sizeNotesFor(i).map((x) => ({ it: i, x }))) : [];
+    return `<section class="grid g-2" style="margin-bottom:18px">
+      <div class="card"><h2 class="section">🏢 ${hasSize() ? `우리 회사(상시 ${state.size.toLocaleString()}명) 규모별 의무` : '규모별 주요 의무'} <a class="more" href="#search">${hasSize() ? '적용 조문 보기 →' : ''}</a></h2>
+        ${hasSize() ? '' : '<p class="small muted" style="margin-top:-6px">상단에 상시근로자 수를 입력하면 해당되는 의무에 ✅ 표시가 됩니다.</p>'}
+        <ul class="th-list">${th}</ul></div>
+      <div class="card"><h2 class="section">👥 ${hasSize() ? '적용 제외·유의사항' : '인원 입력'}</h2>
+        ${hasSize() ? `${na.length ? `<p class="small" style="margin:0 0 8px"><strong>적용되지 않는 주제 ${na.length}개</strong></p><div class="chips">${na.map((i) => `<a class="chip" href="#search?item=${esc(i.id)}" title="${i.minSize}명 이상 적용">${esc(i.title)} <span class="muted">(${i.minSize}명~)</span></a>`).join('')}</div>` : '<p class="small">수록된 모든 주제가 적용됩니다.</p>'}
+          ${notes.length ? `<p class="small" style="margin:14px 0 6px"><strong>우리 회사 규모 유의사항</strong></p>${notes.map(({ it, x }) => `<div class="size-note" style="margin-top:6px"><a href="#search?item=${esc(it.id)}">${esc(it.title)}</a> — ${esc(x.text)}</div>`).join('')}` : ''}`
+        : `<p class="small muted" style="margin-top:-6px">상시근로자 수에 따라 근로기준법 적용 범위가 달라집니다(5인·10인·30인·50인 등). 아래에서 고르거나 상단 입력칸에 직접 입력하세요.</p><div class="size-quick">${[3, 5, 10, 30, 50, 100, 300].map((k) => `<button type="button" class="chip" data-size="${k}">${k}명</button>`).join('')}</div>
+          <p class="small muted" style="margin-top:12px">상시근로자 수 = 산정기간(1개월) 동안 사용한 근로자 연인원 ÷ 가동일수 ${refChip('근기령|7-2')}</p>`}
+      </div></section>`;
   }
   const changeLi = (c) => {
     const d = dday(c.date);
@@ -312,6 +347,13 @@
       <p class="small muted" style="margin:8px 0 0">확인 ${esc(new Date(info.checkedAt).toLocaleString('ko-KR'))} · 법제처 데이터가 바뀌면 자동으로 갱신됩니다.</p>`;
   }
 
+  const countText = (list) => (hasSize() ? `상시 ${state.size}명 적용 ${list.filter((it) => applies(it)).length}건${state.showNA ? ` · 미적용 ${list.filter((it) => !applies(it)).length}건` : ''}` : `수록 주제 ${list.length}건`);
+  function sizeBanner() {
+    if (!hasSize()) return `<div class="size-banner">👥 <span>상단 <strong>상시근로자 수</strong>를 입력하면 우리 회사에 적용되는 법 내용만 골라 보여 드립니다.</span><span class="size-quick">${[3, 5, 10, 30, 50, 100, 300].map((k) => `<button type="button" class="chip" data-size="${k}">${k}명</button>`).join('')}</span></div>`;
+    const ap = D.ITEMS.filter((it) => applies(it)).length;
+    return `<div class="size-banner">👥 <span><strong>상시근로자 ${state.size.toLocaleString()}명</strong> 기준 · 수록 ${D.ITEMS.length}개 주제 중 <strong>${ap}개 적용</strong>, ${D.ITEMS.length - ap}개 미적용</span><span class="small muted">상시근로자 수 산정 ${refChip('근기령|7-2')}</span><button type="button" class="btn sm ghost" data-size-clear>기준 해제</button></div>`;
+  }
+
   // ── 조문 찾기
   function renderSearch() {
     const p = routeParams();
@@ -323,12 +365,13 @@
     const list = filteredItems();
     return `
       <div class="page-head"><div><p class="eyebrow">ARTICLE SEARCH</p><h1>조문 찾기</h1><p>주제·키워드·조문번호(예: 56조)로 검색하세요. 각 항목 하단에 위반 시 처벌규정이 있으며, 클릭하면 법문을 볼 수 있습니다.</p></div></div>
+      ${sizeBanner()}
       <div class="card" style="margin-bottom:14px">
         <form class="search-row" id="searchForm" role="search"><input id="searchInput" type="search" value="${esc(state.q)}" placeholder="예: 연차, 해고예고, 76조의2, 과태료" aria-label="검색어" /><button class="btn primary" type="submit">검색</button></form>
         <div class="cat-bar" style="margin-top:12px">${[{ id: 'all', name: '전체', icon: '✨' }].concat(D.CATEGORIES).map((c) => `<button type="button" class="chip ${state.cat === c.id ? 'on' : ''}" data-cat="${c.id}">${c.icon} ${esc(c.name)}</button>`).join('')}</div>
         <div class="toolbar" style="margin:4px 0 0">
-          <span class="count">수록 주제 ${list.length}건</span>
-          <label class="toggle"><input type="checkbox" id="under5" ${state.under5 ? 'checked' : ''}/> 5인 미만 적용만</label>
+          <span class="count">${countText(list)}</span>
+          ${hasSize() ? `<label class="toggle"><input type="checkbox" id="showNA" ${state.showNA ? 'checked' : ''}/> 미적용 항목도 보기</label>` : `<label class="toggle"><input type="checkbox" id="under5" ${state.under5 ? 'checked' : ''}/> 5인 미만 적용만</label>`}
           <label class="toggle"><input type="checkbox" id="expandAll" ${state.expandAll ? 'checked' : ''}/> 모두 펼치기</label>
           <select class="select" id="sortSel" aria-label="정렬"><option value="rel" ${state.sort === 'rel' ? 'selected' : ''}>관련도순</option><option value="law" ${state.sort === 'law' ? 'selected' : ''}>법령·조문순</option><option value="recent" ${state.sort === 'recent' ? 'selected' : ''}>최근 개정순</option></select>
         </div>
@@ -439,7 +482,7 @@
 
         <section class="card calc" data-calc="ot"><h3>⏱ 연장·야간·휴일 가산수당</h3><p class="desc">통상시급 기준 · 야간은 가산분(50%)만 계산</p>
           <div class="fields">${f('ot_wage', '통상시급(원)', 'number', curMW)}${f('ot_ext', '연장근로(시간)', 'number', 10)}${f('ot_night', '야간근로(시간)', 'number', 4)}${f('ot_h8', '휴일근로 8시간 이내(시간)', 'number', 8)}${f('ot_hx', '휴일근로 8시간 초과(시간)', 'number', 0)}
-            <div class="field"><label for="ot_u5">사업장 규모</label><select id="ot_u5"><option value="0">상시 5인 이상</option><option value="1">5인 미만(가산 미적용)</option></select></div></div>
+            <div class="field"><label for="ot_u5">사업장 규모</label><select id="ot_u5"><option value="0">상시 5인 이상</option><option value="1" ${hasSize() && state.size < 5 ? 'selected' : ''}>5인 미만(가산 미적용)</option></select></div></div>
           <div class="result" id="ot_out"></div><div class="ref-line">근거 ${refChip('근기|56')}</div></section>
 
         <section class="card calc" data-calc="np"><h3>🚪 해고예고수당</h3><p class="desc">30일 전 예고하지 않은 경우 통상임금 30일분 이상</p>
@@ -453,6 +496,7 @@
   function runCalcs() {
     const lv = C.annualLeave(v('lv_hire'), v('lv_base'));
     if (lv.error) setOut('lv_out', esc(lv.error), 'err');
+    else if (hasSize() && state.size < 5) setOut('lv_out', `<div class="r-main">적용 제외</div><div class="r-sub">상시 ${state.size}명(5인 미만) 사업장은 연차유급휴가 규정이 적용되지 않습니다. (참고: 5인 이상이라면 ${lv.days}일)</div>`, 'warn');
     else setOut('lv_out', `<div class="r-main">${lv.days}일</div><div class="r-sub">근속 ${Math.floor(lv.months / 12)}년 ${lv.months % 12}개월 · ${esc(lv.basis)}</div>`);
 
     const sv = C.severance({ hire: v('sv_hire'), last: v('sv_last'), wage3m: n('sv_wage'), bonusYear: n('sv_bonus'), leavePayYear: n('sv_leave'), weeklyHours: n('sv_hours') });
@@ -571,7 +615,7 @@
     const list = filteredItems();
     const box = $('#itemList'); if (!box) return;
     box.innerHTML = list.map(itemCard).join('') || `<div class="card empty" style="grid-column:1/-1">'${esc(state.q)}'에 해당하는 수록 주제가 없습니다.</div>`;
-    const cnt = $('.toolbar .count'); if (cnt) cnt.textContent = `수록 주제 ${list.length}건`;
+    const cnt = $('.toolbar .count'); if (cnt) cnt.textContent = countText(list);
   }
   const doSearch = (q) => { state.q = q.trim(); state.cat = 'all'; go('search', state.q ? { q: state.q } : null); };
 
@@ -592,6 +636,9 @@
     if (ct) { state.changeTag = ct.getAttribute('data-ctag'); render(); return; }
     const ol = t.closest('[data-open-law]');
     if (ol) { state.law = ol.getAttribute('data-open-law'); state.lawFilter = ''; go('law', { name: state.law }); window.scrollTo(0, 0); return; }
+    const sz = t.closest('[data-size]');
+    if (sz) { setSize(Number(sz.getAttribute('data-size'))); return; }
+    if (t.closest('#sizeClear') || t.closest('[data-size-clear]')) { setSize(null); return; }
     if (t.closest('#refreshInfo')) { state.info = null; renderLawStatus(); refreshInfo(true); return; }
     if (t.closest('#drfSearch')) { runDrfSearch(state.q, '#drfResult', '2'); return; }
     if (t.closest('#apiTest')) { testApi(); return; }
@@ -627,22 +674,44 @@
     if (t.id === 'dl_sel' || t.id === 'dl_base') runDeadline();
     if (t.id === 'lawFilter') { state.lawFilter = t.value; drawLawArticles(); }
     if (t.id === 'searchInput') { state.q = t.value; rerenderSearchList(); }
+    if (t.id === 'sizeInput') { clearTimeout(sizeTimer); sizeTimer = setTimeout(() => { const raw = t.value.trim(); const num = Math.floor(Number(raw)); setSize(raw === '' || !Number.isFinite(num) || num < 0 ? null : Math.min(num, 999999), true); }, 350); }
   });
   document.addEventListener('change', (e) => {
     const t = e.target;
     if (t.closest('[data-calc]')) runCalcs();
     if (t.id === 'dl_sel') runDeadline();
     if (t.id === 'under5') { state.under5 = t.checked; rerenderSearchList(); }
+    if (t.id === 'showNA') { state.showNA = t.checked; rerenderSearchList(); }
     if (t.id === 'expandAll') { state.expandAll = t.checked; rerenderSearchList(); }
     if (t.id === 'sortSel') { state.sort = t.value; rerenderSearchList(); }
   });
+  let sizeTimer;
+  function syncSizeBox() {
+    const inp = $('#sizeInput'); const box = $('#sizeBox'); const clr = $('#sizeClear');
+    if (inp && document.activeElement !== inp) inp.value = hasSize() ? String(state.size) : '';
+    if (box) box.classList.toggle('set', hasSize());
+    if (clr) clr.hidden = !hasSize();
+  }
+  function setSize(v, fromInput) {
+    const next = v == null || !Number.isFinite(v) || v < 0 ? null : Math.floor(v);
+    if (next === state.size) { syncSizeBox(); return; }
+    state.size = next;
+    if (next == null) store.del('hr.size'); else store.set('hr.size', next);
+    if (!fromInput) { const inp = $('#sizeInput'); if (inp) inp.value = next == null ? '' : String(next); }
+    syncSizeBox();
+    const y = window.scrollY;
+    render();
+    window.scrollTo(0, y);
+    toast(next == null ? '상시근로자 수 기준을 해제했습니다.' : `상시근로자 ${next.toLocaleString()}명 기준으로 표시합니다.`);
+  }
   function clearCache() {
     memo.clear();
     try { Object.keys(localStorage).filter((k) => k.startsWith('hr.c') || k === 'hr.info').forEach((k) => localStorage.removeItem(k)); } catch (_) { /* noop */ }
   }
   window.addEventListener('hashchange', () => { closeModal(); render(); if (!routeParams().get('item')) window.scrollTo(0, 0); });
 
+  syncSizeBox();
   render();
   refreshInfo(false);
-  window.HRApp = { parseRef, scoreItem, filteredItems, state, render };
+  window.HRApp = { parseRef, scoreItem, filteredItems, state, render, setSize, applies };
 })();
