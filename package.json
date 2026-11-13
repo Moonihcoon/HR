@@ -1,0 +1,11 @@
+{
+  "name": "moonhr-handbook",
+  "version": "1.0.0",
+  "private": true,
+  "description": "인사담당자를 위한 노동법 조문·처벌규정 대시보드 (법제처 Open API 연동)",
+  "scripts": {
+    "dev": "node scripts/dev-server.js",
+    "test": "node tests/run.js"
+  },
+  "engines": { "node": ">=18" }
+}
