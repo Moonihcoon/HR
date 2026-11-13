@@ -18,6 +18,8 @@
 
 const BASE = 'https://www.law.go.kr/DRF';
 const TIMEOUT_MS = 9000;
+// 법제처 DRF는 요청 출처(Referer)를 open.law.go.kr에 등록된 도메인과 대조하므로 서비스 도메인을 명시
+const SITE_URL = (process.env.SITE_URL || 'https://moonhr-handbook.vercel.app').replace(/\/$/, '') + '/';
 const CACHE_OK = 'public, max-age=300, s-maxage=43200, stale-while-revalidate=604800';
 
 const mstCache = new Map(); // normalizedName -> { at, meta }
@@ -55,7 +57,7 @@ async function drf(path, params) {
   try {
     res = await fetch(url, {
       signal: ctrl.signal,
-      headers: { Accept: 'application/json', 'User-Agent': 'moonhr-handbook/1.0' },
+      headers: { Accept: 'application/json', 'User-Agent': 'Mozilla/5.0 (compatible; moonhr-handbook/1.0)', Referer: SITE_URL },
     });
   } catch (e) {
     throw new ApiError(504, e.name === 'AbortError' ? '법제처 응답 시간이 초과되었습니다.' : '법제처 서버에 연결할 수 없습니다.', 'UPSTREAM');
@@ -69,12 +71,13 @@ async function drf(path, params) {
     data = JSON.parse(text);
   } catch (_) {
     // 인증 실패 등은 HTML/텍스트로 오는 경우가 있음
-    if (/검증|인증|OC|등록/.test(text)) throw new ApiError(401, '법제처 API 인증(OC)에 실패했습니다. OC 값과 등록 도메인/IP를 확인하세요.', 'AUTH');
+    if (/검증|인증|OC|등록/.test(text)) throw new ApiError(401, '법제처 API 인증에 실패했습니다. open.law.go.kr에 OC와 도메인(moonhr-handbook.vercel.app)이 등록되어 있는지 확인하세요.', 'AUTH');
     throw new ApiError(502, '법제처 응답을 해석할 수 없습니다.', 'PARSE');
   }
   const msg = data && (data.result || data.msg || (data.Law && data.Law.result));
   if (msg && /실패|검증|인증|없습니다|오류/.test(String(msg)) && !data.LawSearch && !data['법령']) {
-    throw new ApiError(/검증|인증/.test(String(msg)) ? 401 : 404, String(msg), /검증|인증/.test(String(msg)) ? 'AUTH' : 'NOT_FOUND');
+    const auth = /검증|인증/.test(String(msg));
+    throw new ApiError(auth ? 401 : 404, auth ? `${msg} (open.law.go.kr에 도메인 moonhr-handbook.vercel.app 등록 필요)` : String(msg), auth ? 'AUTH' : 'NOT_FOUND');
   }
   return data;
 }
